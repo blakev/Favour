@@ -12,6 +12,7 @@ from multiprocessing import Process
 import tornado.netutil
 import tornado.iostream
 import tornado.ioloop
+from tornado import gen
 
 import errors
 
@@ -49,12 +50,17 @@ class Member(Process):
 
         self.server_address = ('', self.bport)
         self.buffer_size = int(config.get('buffer_size', 1024))
-        self.recv_term = config.get('recv_term_byte', 0x01)
-
+        self.term_byte = str(config.get('recv_term_byte', 0x01))
 
 
     def listen(self, sock, fd, events):
-        data = self.receive_message(sock.recv(self.buffer_size))
+        data = ''
+        while True:
+            x = sock.recv(self.buffer_size)
+            data += x
+            if len(x) == 0 or self.term_byte in data: break
+
+        data = json.loads(data)
         print data
 
     def broadcast(self, sock, msg):
@@ -63,13 +69,9 @@ class Member(Process):
            r = sock.sendto(msg, self.multicast_group)
        except Exception:
            r = 0
-
            raise
        finally:
            return True if r is None else False
-
-    def receive_message(self, data):
-        return json.loads(data)
 
     def prepare_message(self, msg):
         return json.dumps(dict(
@@ -78,7 +80,7 @@ class Member(Process):
             on = self.bport,
             msg = str(msg),
             at = int(time.time()),
-            txid = self._id
+            src = self._id
         ))
 
     def run(self):
